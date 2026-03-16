@@ -317,9 +317,12 @@ public final class Qwen3ChatModel: @unchecked Sendable {
                     var logits = try self.generator.prefill(tokenIds: promptTokens)
                     var generatedTokens: [Int] = []
 
-                    // Decode loop — skip thinking block tokens
+                    // Decode loop — skip thinking tokens, cap thinking budget
                     var inThinking = false
-                    for _ in 0..<sampling.maxTokens {
+                    var responseTokenCount = 0
+                    let thinkBudget = 100
+
+                    for _ in 0..<(sampling.maxTokens + thinkBudget) {
                         let nextToken = self.generator.sample(
                             logits: logits,
                             config: sampling,
@@ -339,7 +342,18 @@ public final class Qwen3ChatModel: @unchecked Sendable {
                                   let text = self.tokenizer.decodeToken(nextToken),
                                   !self.tokenizer.isSpecialToken(nextToken) {
                             continuation.yield(text)
+                            responseTokenCount += 1
                         }
+
+                        // Cap thinking: inject </think> to force transition
+                        if inThinking && generatedTokens.count > thinkBudget {
+                            generatedTokens.append(ChatTemplate.thinkEndId)
+                            logits = try self.generator.decode(tokenId: ChatTemplate.thinkEndId)
+                            inThinking = false
+                            continue
+                        }
+
+                        if responseTokenCount >= sampling.maxTokens { break }
 
                         logits = try self.generator.decode(tokenId: nextToken)
                     }
