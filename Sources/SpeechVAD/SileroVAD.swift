@@ -297,6 +297,42 @@ public final class SileroVADModel {
         }
     }
 
+    /// Load VAD model from a local directory (no network access).
+    ///
+    /// Use this to load bundled models embedded in an app bundle.
+    ///
+    /// - Parameters:
+    ///   - directory: Local directory containing model weight files (safetensors)
+    ///   - engine: Inference backend (only `.mlx` supported for local loading)
+    /// - Returns: Ready-to-use VAD model
+    public static func fromLocalDirectory(
+        _ directory: URL,
+        engine: SileroVADEngine = .mlx
+    ) throws -> SileroVADModel {
+        switch engine {
+        case .mlx:
+            let network = SileroVADNetwork()
+            try SileroWeightLoader.loadWeights(model: network, from: directory)
+            return SileroVADModel(network: network)
+        case .coreml:
+            #if canImport(CoreML)
+            let modelURL = directory.appendingPathComponent("silero_vad.mlmodelc", isDirectory: true)
+            guard FileManager.default.fileExists(atPath: modelURL.path) else {
+                throw AudioModelError.modelLoadFailed(
+                    modelId: "local",
+                    reason: "CoreML model not found at \(modelURL.path)")
+            }
+            let mlConfig = MLModelConfiguration()
+            mlConfig.computeUnits = .cpuAndNeuralEngine
+            let model = try MLModel(contentsOf: modelURL, configuration: mlConfig)
+            return SileroVADModel(coremlModel: model)
+            #else
+            throw AudioModelError.invalidConfiguration(
+                model: "SileroVAD", reason: "CoreML not available on this platform")
+            #endif
+        }
+    }
+
 }
 
 // MARK: - VoiceActivityDetectionModel

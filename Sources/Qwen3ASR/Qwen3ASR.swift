@@ -359,4 +359,47 @@ public extension Qwen3ASRModel {
 
         return model
     }
+
+    /// Load model from a local directory (no network access).
+    ///
+    /// Use this to load bundled models embedded in an app bundle.
+    /// The directory must contain safetensors weight files, vocab.json, and merges.txt.
+    ///
+    /// - Parameters:
+    ///   - directory: Local directory containing model files
+    ///   - modelId: Model identifier for auto-detecting size/quantization (e.g. "Qwen3-ASR-0.6B-8bit")
+    ///              If nil, defaults to 0.6B-4bit config.
+    /// - Returns: Ready-to-use ASR model
+    static func fromLocalDirectory(
+        _ directory: URL,
+        modelId: String? = nil
+    ) throws -> Qwen3ASRModel {
+        let id = modelId ?? directory.lastPathComponent
+        let modelSize = ASRModelSize.detect(from: id)
+        let detectedBits = ASRModelSize.detectBits(from: id)
+
+        let model = Qwen3ASRModel(
+            audioConfig: modelSize.audioConfig,
+            textConfig: modelSize.textConfig(bits: detectedBits)
+        )
+
+        // Load tokenizer
+        let vocabPath = directory.appendingPathComponent("vocab.json")
+        if FileManager.default.fileExists(atPath: vocabPath.path) {
+            let tokenizer = Qwen3Tokenizer()
+            try tokenizer.load(from: vocabPath)
+            model.setTokenizer(tokenizer)
+        }
+
+        // Load audio encoder weights
+        try WeightLoader.loadWeights(into: model.audioEncoder, from: directory)
+
+        // Initialize and load text decoder
+        model.initializeTextDecoder()
+        if let textDecoder = model.textDecoder {
+            try WeightLoader.loadTextDecoderWeights(into: textDecoder, from: directory)
+        }
+
+        return model
+    }
 }
