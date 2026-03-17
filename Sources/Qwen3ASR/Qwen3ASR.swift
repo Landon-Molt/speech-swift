@@ -374,9 +374,20 @@ public extension Qwen3ASRModel {
         _ directory: URL,
         modelId: String? = nil
     ) throws -> Qwen3ASRModel {
+        // Try to read quantization from config.json first, fall back to model ID detection
+        var detectedBits: Int
+        let configPath = directory.appendingPathComponent("config.json")
+        if let configData = try? Data(contentsOf: configPath),
+           let config = try? JSONSerialization.jsonObject(with: configData) as? [String: Any],
+           let quant = config["quantization"] as? [String: Any],
+           let bits = quant["bits"] as? Int {
+            detectedBits = bits
+        } else {
+            let id = modelId ?? directory.lastPathComponent
+            detectedBits = ASRModelSize.detectBits(from: id)
+        }
         let id = modelId ?? directory.lastPathComponent
         let modelSize = ASRModelSize.detect(from: id)
-        let detectedBits = ASRModelSize.detectBits(from: id)
 
         let model = Qwen3ASRModel(
             audioConfig: modelSize.audioConfig,
